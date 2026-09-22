@@ -27,6 +27,10 @@ USER_AGENT = os.environ.get(
     "RESOLVER_USER_AGENT", "AmpliPhyCoverArtResolver/0.1 (ampliphy.net; contact via site)"
 )
 TIMEOUT = float(os.environ.get("RESOLVER_HTTP_TIMEOUT", "12"))
+# MusicBrainz / Cover Art Archive budget (it is rate-limited and slow to answer).
+MB_BUDGET_SEC = float(os.environ.get("RESOLVER_MB_BUDGET_SEC", "6"))
+MB_HEAD_TIMEOUT = float(os.environ.get("RESOLVER_MB_HEAD_TIMEOUT", "4"))
+MB_MAX_ART_CHECKS = int(os.environ.get("RESOLVER_MB_MAX_ART_CHECKS", "4"))
 
 
 @dataclass
@@ -74,10 +78,10 @@ def _get_json(url: str, headers: dict | None = None, data: bytes | None = None) 
         raise ProviderError(f"{url} -> {e}") from e
 
 
-def _head_ok(url: str) -> bool:
+def _head_ok(url: str, timeout: float | None = None) -> bool:
     req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as r:
             return 200 <= r.status < 400
     except Exception:
         return False
@@ -155,6 +159,10 @@ def musicbrainz(artist: str, title: str, album: str = "", limit: int = 8) -> lis
     data = _get_json(f"https://musicbrainz.org/ws/2/recording?{qs}")
     out = []
     seen_releases = set()
+    # Cover Art Archive HEAD checks are slow (redirect + archive.org); keep a hard budget so a
+    # MusicBrainz lookup can never hold up now-playing metadata for 20+ seconds.
+    mb_started = time.time()
+    checks = 0
     for rec in data.get("recordings", []):
         credit = rec.get("artist-credit") or []
         names = [c.get("name") or (c.get("artist") or {}).get("name", "") for c in credit if isinstance(c, dict)]
@@ -166,7 +174,10 @@ def musicbrainz(artist: str, title: str, album: str = "", limit: int = 8) -> lis
             seen_releases.add(rid)
             art = f"https://coverartarchive.org/release/{rid}/front-500"
             # Only offer releases that actually have front art in the archive.
-            if not _head_ok(art):
+            if checks >= MB_MAX_ART_CHECKS or time.time() - mb_started > MB_BUDGET_SEC:
+                return out
+            checks += 1
+            if not _head_ok(art, timeout=MB_HEAD_TIMEOUT):
                 continue
             out.append(Candidate(
                 provider="musicbrainz",

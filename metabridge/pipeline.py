@@ -77,7 +77,11 @@ def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
     t0 = now()
     bad = looks_like_template(ev)
     if bad:
-        log.error("REFUSED event from %s — %s (raw=%r). Nothing resolved, nothing sent downstream.", ev.source, bad, ev.raw)
+        if bad == "empty artist":
+            # Ad breaks, sweepers and station IDs arrive with no artist. Expected — not an error.
+            log.info("Skipped non-music item from %s (no artist): %r — not sent to Cirrus.", ev.source, (ev.title or "").strip())
+        else:
+            log.error("REFUSED event from %s — %s (raw=%r). Nothing resolved, nothing sent downstream.", ev.source, bad, ev.raw)
         enriched = EnrichedTrackEvent(event=ev, artwork_url=None, source=None, confidence=0.0, match=None,
                                       reasons=[f"refused: {bad}"], cache_hit=False, resolve_start=t0, resolve_end=now())
         from .events import OutputResult
@@ -123,8 +127,11 @@ def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
                 from .events import OutputResult
                 enriched.outputs.append(OutputResult(getattr(mod, "NAME", "?"), False, now(), f"error: {e}"))
 
-        # Spawn retry thread for Cirrus if song is long enough
-        if ev.duration_ms and ev.duration_ms >= 30000:
+        # Spawn retry thread for Cirrus only if the first post did not succeed
+        # (e.g. Cirrus not configured yet, network blip). A successful post is not repeated.
+        cirrus_ok = any(getattr(r, "adapter", None) == "securenet_cirrus" and getattr(r, "ok", False)
+                        for r in enriched.outputs)
+        if ev.duration_ms and ev.duration_ms >= 30000 and not cirrus_ok:
             threading.Thread(
                 target=_retry_cirrus_send,
                 args=(enriched, ev.duration_ms),
