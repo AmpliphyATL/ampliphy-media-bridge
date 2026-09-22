@@ -113,16 +113,44 @@ def start_server():
         log.exception("Server failed to start")
 
 
+AUTOSTARTED = "--autostart" in sys.argv  # launched by Windows at login
+
+
+def register_autostart():
+    """First run: put ourselves in the Windows startup list unless the user
+    turned that off in Settings. Runs quietly; never blocks startup."""
+    try:
+        import json
+        from metabridge import autostart
+        if not autostart.is_windows():
+            return
+        prefs = {}
+        sf = pathlib.Path(os.environ["METABRIDGE_SETTINGS_FILE"])
+        if sf.exists():
+            try:
+                prefs = json.loads(sf.read_text(encoding="utf-8"))
+            except Exception:
+                prefs = {}
+        if prefs.get("autostart", True):
+            ok = autostart.enable()   # also refreshes the path if the exe moved
+            log.info("Start-with-Windows registered: %s", ok)
+        else:
+            log.info("Start-with-Windows disabled by user")
+    except Exception:
+        log.exception("Could not update start-with-Windows entry")
+
+
 def open_dashboard():
     try:
         import webview
-        log.info("Opening native window")
+        log.info("Opening native window (minimized=%s)", AUTOSTARTED)
         webview.create_window(
             title="AmpliPhy MetaBridge",
             url=URL,
             width=1200,
             height=800,
             min_size=(800, 600),
+            minimized=AUTOSTARTED,
         )
         webview.start()
     except ImportError:
@@ -132,8 +160,9 @@ def open_dashboard():
 
 def main():
     log.info("=" * 60)
-    log.info("AmpliPhy MetaBridge Launcher  (app dir: %s)", APP_DIR)
+    log.info("AmpliPhy MetaBridge Launcher  (app dir: %s, autostart=%s)", APP_DIR, AUTOSTARTED)
     log.info("=" * 60)
+    register_autostart()
 
     if port_in_use(PORT):
         if server_is_metabridge(URL):
