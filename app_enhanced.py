@@ -125,10 +125,28 @@ class _GluedPathRewrite:
 app.add_middleware(_GluedPathRewrite)
 
 
+HISTORY_DAYS = int(os.environ.get("METABRIDGE_HISTORY_DAYS", "30"))
+
+
+def _prune_loop():
+    """Trim old events/lookups on startup and then once a day."""
+    import threading
+    while True:
+        try:
+            gone = db.prune_history(HISTORY_DAYS)
+            if gone["events"] or gone["lookups"]:
+                logging.getLogger("metabridge").info("pruned history older than %d days: %s", HISTORY_DAYS, gone)
+        except Exception:
+            logging.getLogger("metabridge").exception("history prune failed")
+        time.sleep(86400)
+
+
 @app.on_event("startup")
 def _startup():
     tcp_listener.start_if_configured()
     playoutone_http_poll.start_if_configured()
+    import threading
+    threading.Thread(target=_prune_loop, daemon=True).start()
     logging.getLogger("metabridge").info("outputs: %s", os.environ.get("METABRIDGE_OUTPUTS", "log"))
 
 
