@@ -41,10 +41,13 @@ os.environ.setdefault("RESOLVER_DB", str(DATA_DIR / "resolver.sqlite"))
 os.environ.setdefault("METABRIDGE_SETTINGS_FILE", str(APP_DIR / "metabridge.env.json"))
 
 LOG_FILE = APP_DIR / "AmpliPhyBridge.log"
+# Roll the log over at midnight and keep the last 7 days; older days are deleted
+# automatically so the folder never fills up.
+from logging.handlers import TimedRotatingFileHandler
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8")],
+    handlers=[TimedRotatingFileHandler(LOG_FILE, when="midnight", backupCount=7, encoding="utf-8")],
 )
 log = logging.getLogger("metabridge_launcher")
 
