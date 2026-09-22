@@ -17,6 +17,13 @@ import threading
 import time
 import webbrowser
 
+# A --windowed PyInstaller exe has no console: sys.stdout/stderr are None,
+# which makes uvicorn's default log formatter blow up. Give them a sink.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 # --------------------------------------------------------------------------
 # Where do persistent files live?  For a PyInstaller one-file build,
 # __file__ points into a temp folder that is deleted on exit, so settings and
@@ -100,7 +107,7 @@ def start_server():
         from app_enhanced import app  # loads config on import
 
         log.info("Starting Uvicorn on 0.0.0.0:%s", PORT)
-        uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info", access_log=False)
+        uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info", access_log=False, log_config=None)
     except Exception as e:  # any failure must be visible
         _server_error = e
         log.exception("Server failed to start")
