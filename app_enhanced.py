@@ -529,6 +529,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             3. Click Save Settings<br>
             4. Test by entering a track in the Lookup tab — metadata should post to Cirrus<br>
             <br><b>Getting your token:</b> Log in to SecureNet > Cirrus > Settings > API Tokens. <b>Important:</b> Use a fresh token, never paste a token that was shared in chat.
+            <br><br><b>Saved to:</b> <code>{e(str(SETTINGS_FILE))}</code> — kept across restarts and upgrades; new builds pick it up automatically.
         </div>
     </div>
 

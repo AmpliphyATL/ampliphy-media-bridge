@@ -25,22 +25,73 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
 # --------------------------------------------------------------------------
-# Where do persistent files live?  For a PyInstaller one-file build,
-# __file__ points into a temp folder that is deleted on exit, so settings and
-# the database must live next to the real .exe instead.
+# Where do persistent files live?
+#
+# Settings, the database and the log must SURVIVE upgrades. Every new build is
+# unzipped into a new folder (AmpliPhyBridge-v43, -v44, ...), so keeping them next
+# to the .exe meant every upgrade started with a blank Settings tab. They now live
+# in a fixed per-user folder:
+#     %LOCALAPPDATA%\AmpliPhy MetaBridge\      (Windows)
+#     ~/.ampliphy-metabridge/                    (elsewhere / dev)
+# On first launch of this layout, anything found next to the .exe (an older
+# build's settings/database) is copied over once, so nothing is lost.
 # --------------------------------------------------------------------------
 if getattr(sys, "frozen", False):
     APP_DIR = pathlib.Path(sys.executable).resolve().parent
 else:
     APP_DIR = pathlib.Path(__file__).resolve().parent
 
-DATA_DIR = APP_DIR / "data"
+
+def _user_data_dir() -> pathlib.Path:
+    override = os.environ.get("METABRIDGE_HOME")
+    if override:
+        return pathlib.Path(override)
+    base = os.environ.get("LOCALAPPDATA")
+    if base and sys.platform.startswith("win"):
+        return pathlib.Path(base) / "AmpliPhy MetaBridge"
+    return pathlib.Path.home() / ".ampliphy-metabridge"
+
+
+DATA_DIR = _user_data_dir()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+SETTINGS_FILE = DATA_DIR / "metabridge.env.json"
+DB_FILE = DATA_DIR / "resolver.sqlite"
 
-os.environ.setdefault("RESOLVER_DB", str(DATA_DIR / "resolver.sqlite"))
-os.environ.setdefault("METABRIDGE_SETTINGS_FILE", str(APP_DIR / "metabridge.env.json"))
 
-LOG_FILE = APP_DIR / "AmpliPhyBridge.log"
+def _migrate_from_app_dir():
+    """One-time: bring settings/DB from an older build's folder (next to the exe)."""
+    import shutil
+    if SETTINGS_FILE.exists():
+        return
+    # Candidates: this exe's folder, then sibling folders of earlier builds
+    # (e.g. Downloads\AmpliPhyBridge-v38 next to Downloads\AmpliPhyBridge-v44), newest first.
+    candidates = [APP_DIR]
+    try:
+        sibs = [d for d in APP_DIR.parent.iterdir() if d.is_dir() and d != APP_DIR and (d / "metabridge.env.json").is_file()]
+        sibs.sort(key=lambda d: (d / "metabridge.env.json").stat().st_mtime, reverse=True)
+        candidates += sibs
+    except Exception:
+        pass
+    for folder in candidates:
+        src = folder / "metabridge.env.json"
+        if not src.is_file():
+            continue
+        try:
+            shutil.copy2(src, SETTINGS_FILE)
+            old_db = folder / "data" / "resolver.sqlite"
+            if old_db.is_file() and not DB_FILE.exists():
+                shutil.copy2(old_db, DB_FILE)
+            return
+        except Exception:
+            continue
+
+
+_migrate_from_app_dir()
+
+os.environ.setdefault("RESOLVER_DB", str(DB_FILE))
+os.environ.setdefault("METABRIDGE_SETTINGS_FILE", str(SETTINGS_FILE))
+
+LOG_FILE = DATA_DIR / "AmpliPhyBridge.log"
 # Roll the log over at midnight and keep the last 7 days; older days are deleted
 # automatically so the folder never fills up.
 from logging.handlers import TimedRotatingFileHandler
@@ -173,7 +224,7 @@ def open_dashboard():
 
 def main():
     log.info("=" * 60)
-    log.info("AmpliPhy MetaBridge %s  (app dir: %s, autostart=%s)", VERSION, APP_DIR, AUTOSTARTED)
+    log.info("AmpliPhy MetaBridge %s  (app dir: %s, data dir: %s, autostart=%s)", VERSION, APP_DIR, DATA_DIR, AUTOSTARTED)
     log.info("=" * 60)
     register_autostart()
 
