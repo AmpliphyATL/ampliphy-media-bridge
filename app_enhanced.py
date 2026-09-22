@@ -19,7 +19,7 @@ import pathlib
 import time
 
 from fastapi import BackgroundTasks, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 
 from metabridge import autostart, config, db, outputs, secrets
@@ -37,6 +37,19 @@ except Exception:
 VERSION = f"v.{BUILD_NUMBER}"
 
 app = FastAPI(title="AmpliPhy MetaBridge", version=VERSION)
+
+# Bundled static assets (logo). Inside the PyInstaller exe they live under sys._MEIPASS.
+import sys as _sys
+ASSETS_DIR = pathlib.Path(getattr(_sys, "_MEIPASS", pathlib.Path(__file__).resolve().parent)) / "assets"
+
+
+@app.get("/assets/{name}")
+def asset(name: str):
+    f = ASSETS_DIR / pathlib.Path(name).name  # no path traversal
+    if not f.is_file():
+        return PlainTextResponse("not found", status_code=404)
+    return FileResponse(str(f), headers={"Cache-Control": "public, max-age=86400"})
+
 
 # Settings file path (persists credentials entered via dashboard)
 SETTINGS_FILE = pathlib.Path(os.environ.get("METABRIDGE_SETTINGS_FILE") or (pathlib.Path(__file__).resolve().parent / "metabridge.env.json"))
@@ -302,60 +315,79 @@ def cache_clear():
 
 # ============================================================ Dashboard UI
 STYLE = """<style>
+:root { color-scheme: light;
+  --bg:#fafafa; --panel:#fff; --panel-2:#f9f9f9; --panel-3:#f5f5f5; --text:#222; --muted:#777; --muted-2:#999; --line:#e0e0e0; --line-2:#ddd;
+  --accent:#007aff; --accent-hover:#0051d5; --btn2:#e8e8e8; --btn2-hover:#d0d0d0; --btn2-text:#222;
+  --warn-bg:#fff8e6; --warn-text:#e65100; --ok-bg:#e8f5e9; --ok-text:#2e7d32; --err-bg:#ffebee; --err-text:#c62828; --unres:#fffbfb;
+  --header:#0b0b14; --header-line:#1f1f33; --focus:rgba(0,122,255,0.1); --note:#f0f0f0; }
+[data-theme="dark"] { color-scheme: dark;
+  --bg:#0f0f17; --panel:#171724; --panel-2:#1d1d2c; --panel-3:#1a1a28; --text:#e8e8f0; --muted:#9a9ab0; --muted-2:#7c7c94; --line:#2a2a3d; --line-2:#33334a;
+  --accent:#4da3ff; --accent-hover:#7bbaff; --btn2:#2a2a3d; --btn2-hover:#3a3a52; --btn2-text:#e8e8f0;
+  --warn-bg:#3a2a10; --warn-text:#ffb74d; --ok-bg:#12301a; --ok-text:#7ad68e; --err-bg:#3a1416; --err-text:#ff8a80; --unres:#1f1519;
+  --header:#07070d; --header-line:#1f1f33; --focus:rgba(77,163,255,0.2); --note:#1d1d2c; }
+
 * { box-sizing: border-box; }
-body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: #fafafa; color: #222; }
-header { background: linear-gradient(135deg, #fff 0%, #f9f9f9 100%); padding: 20px 24px; border-bottom: 2px solid #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+body { font-family: -apple-system, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+header { background: var(--header); padding: 10px 24px; border-bottom: 2px solid var(--header-line); box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
 main { margin: 24px auto; max-width: 1200px; }
 h1 { font-size: 24px; margin: 0; }
-h1 small { font-size: 14px; font-weight: 400; color: #777; }
-h2 { font-size: 16px; margin: 24px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #e0e0e0; }
-input, textarea, select { padding: 8px; margin: 4px 0; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: inherit; }
-input:focus, textarea:focus, select:focus { outline: 0; border-color: #007aff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
-button { padding: 8px 14px; margin: 4px 4px 4px 0; background: #007aff; color: #fff; border: 0; border-radius: 4px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
-button:hover { background: #0051d5; }
-button.secondary { background: #e8e8e8; color: #222; }
-button.secondary:hover { background: #d0d0d0; }
+h1 small { font-size: 14px; font-weight: 400; color: var(--muted); }
+h2 { font-size: 16px; margin: 24px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+input, textarea, select { padding: 8px; margin: 4px 0; border: 1px solid var(--line-2); border-radius: 4px; font-size: 13px; font-family: inherit; background: var(--panel); color: var(--text); }
+input:focus, textarea:focus, select:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 2px var(--focus); }
+button { padding: 8px 14px; margin: 4px 4px 4px 0; background: var(--accent); color: #fff; border: 0; border-radius: 4px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+button:hover { background: var(--accent-hover); }
+button.secondary { background: var(--btn2); color: var(--btn2-text); }
+button.secondary:hover { background: var(--btn2-hover); }
 button.success { background: #2e9e5b; }
 button.success:hover { background: #237d48; }
 button.danger { background: #dc3545; }
 button.danger:hover { background: #bb2d3b; }
-table { border-collapse: collapse; width: 100%; background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; overflow: hidden; }
-td, th { border-bottom: 1px solid #e0e0e0; padding: 10px; font-size: 13px; vertical-align: top; text-align: left; }
-th { background: #f5f5f5; font-weight: 500; }
+table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+td, th { border-bottom: 1px solid var(--line); padding: 10px; font-size: 13px; vertical-align: top; text-align: left; }
+th { background: var(--panel-3); font-weight: 500; }
 tr:last-child td { border-bottom: 0; }
-img { border: 1px solid #ddd; border-radius: 4px; background: #fff; }
+img { border: 1px solid var(--line-2); border-radius: 4px; background: var(--panel); }
 .alert { padding: 12px; border-radius: 4px; margin-bottom: 16px; }
-.alert.warning { background: #fff8e6; border-left: 4px solid #ff9800; color: #e65100; }
-.alert.success { background: #e8f5e9; border-left: 4px solid #4caf50; color: #2e7d32; }
-.alert.error { background: #ffebee; border-left: 4px solid #dc3545; color: #c62828; }
-.kpi { display: inline-block; background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 14px 16px; margin: 0 8px 12px 0; font-size: 13px; min-width: 100px; }
-.kpi b { font-size: 18px; display: block; color: #007aff; }
-.kpi span { color: #777; font-size: 12px; }
+.alert.warning { background: var(--warn-bg); border-left: 4px solid #ff9800; color: var(--warn-text); }
+.alert.success { background: var(--ok-bg); border-left: 4px solid #4caf50; color: var(--ok-text); }
+.alert.error { background: var(--err-bg); border-left: 4px solid #dc3545; color: var(--err-text); }
+.kpi { display: inline-block; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; margin: 0 8px 12px 0; font-size: 13px; min-width: 100px; }
+.kpi b { font-size: 18px; display: block; color: var(--accent); }
+.kpi span { color: var(--muted); font-size: 12px; }
 .ok { color: #2e9e5b; font-weight: 500; }
 .no { color: #dc3545; font-weight: 500; }
-.small { color: #777; font-size: 12px; }
-.form-group { margin-bottom: 16px; padding: 12px; background: #f9f9f9; border-radius: 4px; border-left: 3px solid #ddd; }
-.form-group label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
-.form-group label .note { font-weight: 400; color: #999; font-size: 11px; display: block; margin-top: 2px; }
+.small { color: var(--muted); font-size: 12px; }
+.form-group { margin-bottom: 16px; padding: 12px; background: var(--panel-2); border-radius: 4px; border-left: 3px solid var(--line-2); }
+.form-group label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 4px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group label .note { font-weight: 400; color: var(--muted-2); font-size: 11px; display: block; margin-top: 2px; }
 .form-inline { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
 .form-inline input { margin: 0; flex: 1; min-width: 200px; }
 .form-inline button { margin: 0; white-space: nowrap; }
-.section { background: #fff; padding: 16px; border-radius: 6px; margin-bottom: 16px; border: 1px solid #e0e0e0; }
-.tab-nav { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; flex-wrap: wrap; }
-.tab-nav a { padding: 10px 16px; text-decoration: none; color: #666; border-bottom: 3px solid transparent; cursor: pointer; transition: all 0.2s; }
-.tab-nav a:hover { color: #007aff; }
-.tab-nav a.active { color: #007aff; border-bottom-color: #007aff; }
+.section { background: var(--panel); padding: 16px; border-radius: 6px; margin-bottom: 16px; border: 1px solid var(--line); }
+.tab-nav { display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 2px solid var(--line); flex-wrap: wrap; }
+.tab-nav a { padding: 10px 16px; text-decoration: none; color: var(--muted); border-bottom: 3px solid transparent; cursor: pointer; transition: all 0.2s; }
+.tab-nav a:hover { color: var(--accent); }
+.tab-nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
-.badge { display: inline-block; padding: 2px 8px; background: #e8e8e8; border-radius: 3px; font-size: 11px; margin: 0 2px; }
-.badge.ok { background: #e8f5e9; color: #2e7d32; }
-.badge.warn { background: #fff8e6; color: #e65100; }
-.unresolved-row { background: #fffbfb; }
+.badge { display: inline-block; padding: 2px 8px; background: var(--btn2); color: var(--btn2-text); border-radius: 3px; font-size: 11px; margin: 0 2px; }
+.badge.ok { background: var(--ok-bg); color: var(--ok-text); }
+.badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+.unresolved-row { background: var(--unres); }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 @media (max-width: 768px) { .settings-grid { grid-template-columns: 1fr; } }
 .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 .status-indicator.ok { background: #4caf50; }
 .status-indicator.warn { background: #ff9800; }
+.brand { display:flex; align-items:center; gap:16px; }
+.brand video, .brand img { height: 64px; width: auto; display:block; border:0; border-radius:6px; background:#000; }
+.brand-text { color:#e8e8f0; }
+.brand-text .app { font-size: 20px; font-weight: 600; letter-spacing: .3px; }
+.brand-text .ver { font-size: 12px; font-weight: 500; color: #8a8aa8; margin-left: 6px; }
+.header-right { color:#8a8aa8; font-size:11px; text-align:right; display:flex; align-items:center; gap:14px; }
+.theme-btn { margin:0; padding:6px 10px; font-size:12px; background:#1f1f33; color:#e8e8f0; border:1px solid #33334a; }
+.theme-btn:hover { background:#2a2a44; }
 </style>"""
 
 
@@ -479,7 +511,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             </div>
             <div class="form-group">
                 <label>Start with Windows<span class="note">Launch automatically when this PC restarts (like DCS Console / PlayoutONE)</span></label>
-                <label style="text-transform:none;font-size:13px;color:#222;display:flex;align-items:center;gap:8px;cursor:pointer">
+                <label style="text-transform:none;font-size:13px;color:var(--text);display:flex;align-items:center;gap:8px;cursor:pointer">
                     <input type="checkbox" id="autostart_on" {'checked' if settings.get('autostart', True) else ''} style="width:16px;height:16px;margin:0">
                     Start MetaBridge automatically at login
                     <span class="badge {'ok' if autostart.is_enabled() else 'warn'}">{'registered' if autostart.is_enabled() else 'not registered'}</span>
@@ -488,9 +520,9 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         </div>
 
         <button class="success" onclick="saveSettings()">💾 Save Settings</button>
-        <span id="save-status" style="margin-left:12px;font-size:12px;color:#999"></span>
+        <span id="save-status" style="margin-left:12px;font-size:12px;color:var(--muted-2)"></span>
 
-        <div style="margin-top:24px;padding:12px;background:#f0f0f0;border-radius:4px;font-size:12px;color:#555">
+        <div style="margin-top:24px;padding:12px;background:var(--note);border-radius:4px;font-size:12px;color:var(--muted)">
             <b>ℹ️ Setup Instructions:</b><br>
             1. Enter your SecureNet Cirrus call sign and auth token above<br>
             2. Make sure "securenet_cirrus" is in the Outputs list<br>
@@ -526,6 +558,19 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         }}
     }}
 
+    function toggleTheme() {{
+        const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        const next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try {{ localStorage.setItem('mb-theme', next); }} catch (e) {{}}
+        paintThemeBtn();
+    }}
+    function paintThemeBtn() {{
+        const b = document.getElementById('theme-btn'); if (!b) return;
+        b.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️ Light' : '🌙 Dark';
+    }}
+    window.addEventListener('load', paintThemeBtn);
+
     function switchTab(name) {{
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.tab-nav a').forEach(el => el.classList.remove('active'));
@@ -547,18 +592,19 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
     </script>
     """
 
-    return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AmpliPhy MetaBridge {VERSION}</title>{STYLE}</head><body>
+    return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AmpliPhy MetaBridge {VERSION}</title>
+    <script>(function(){{try{{var t=localStorage.getItem('mb-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}}catch(e){{}}}})();</script>
+    {STYLE}</head><body>
     <header>
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-            <div style="font-size:28px;font-weight:bold;color:#007aff;font-family:Georgia,serif">🎵</div>
-            <div>
-                <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:1px;font-weight:500">AmpliPhy</div>
-                <div style="font-size:20px;font-weight:600;color:#222">MetaBridge <span style="font-size:12px;font-weight:500;color:#999;margin-left:6px">{VERSION}</span></div>
+        <div style="display:flex;align-items:center;gap:12px">
+            <div class="brand">
+                <video autoplay muted loop playsinline aria-label="AmpliPhy"><source src="/assets/logo.mp4" type="video/mp4"></video>
+                <div class="brand-text"><span class="app">MetaBridge</span><span class="ver">{VERSION}</span></div>
             </div>
             <div style="flex:1"></div>
-            <div style="text-align:right;font-size:11px;color:#999">
-                <div>Real-Time Metadata Enrichment</div>
-                <div>SecureNet Cirrus Integration</div>
+            <div class="header-right">
+                <div><div>Real-Time Metadata Enrichment</div><div>SecureNet Cirrus Integration</div></div>
+                <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Switch light / dark">🌙 Dark</button>
             </div>
         </div>
     </header>
@@ -584,7 +630,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             <div class="section">
             <table>
                 <tr><th>Time</th><th></th><th>Track</th><th>Status</th><th>Resolve Time</th></tr>
-                {ev_rows if ev_rows else '<tr><td colspan="5" style="text-align:center;color:#999;padding:32px">No events yet — waiting for input from PlayoutONE</td></tr>'}
+                {ev_rows if ev_rows else '<tr><td colspan="5" style="text-align:center;color:var(--muted-2);padding:32px">No events yet — waiting for input from PlayoutONE</td></tr>'}
             </table>
             </div>
         </div>
@@ -625,7 +671,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             </form>
             <table>
                 <tr><th></th><th>Artist</th><th>Title</th><th>Artwork URL</th><th></th></tr>
-                {ov_rows if ov_rows else '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px">No overrides yet</td></tr>'}
+                {ov_rows if ov_rows else '<tr><td colspan="5" style="text-align:center;color:var(--muted-2);padding:20px">No overrides yet</td></tr>'}
             </table>
             </div>
         </div>
