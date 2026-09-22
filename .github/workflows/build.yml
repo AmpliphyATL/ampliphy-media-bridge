@@ -21,11 +21,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install fastapi uvicorn pydantic requests python-multipart pyinstaller pywebview
 
+    - name: Stamp build number
+      shell: bash
+      run: |
+        echo "BUILD_NUMBER = \"${{ github.run_number }}\"" > build_info.py
+        cat build_info.py
+
     - name: Build executable
       run: python -m PyInstaller --onefile --windowed --name "AmpliPhyBridge" --distpath "." --workpath ".build" --hidden-import metabridge.outputs.log --hidden-import metabridge.outputs.webhook --hidden-import metabridge.outputs.securenet_cirrus --hidden-import metabridge.inputs.playoutone_http_poll --hidden-import metabridge.inputs.playoutone_monitor --hidden-import metabridge.inputs.tcp_listener metabridge_launcher.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AmpliPhyBridge
+        name: AmpliPhyBridge-v${{ github.run_number }}
         path: AmpliPhyBridge.exe
