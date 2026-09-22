@@ -156,6 +156,23 @@ def log_event(enriched) -> None:
         )
 
 
+def prune_history(days: int = 30) -> dict:
+    """Delete event and lookup rows older than `days` so the database stays small.
+    Overrides and the artwork cache are kept - they are reused, not history."""
+    import time as _t
+    cutoff = _t.time() - days * 86400
+    with conn() as c:
+        ev = c.execute("DELETE FROM events WHERE received_ts < ?", (cutoff,)).rowcount
+        lk = c.execute("DELETE FROM lookups WHERE ts < ?", (cutoff,)).rowcount
+    if ev or lk:  # reclaim disk space; VACUUM must run outside a transaction
+        v = sqlite3.connect(DB_PATH, isolation_level=None)
+        try:
+            v.execute("VACUUM")
+        finally:
+            v.close()
+    return {"events": ev, "lookups": lk}
+
+
 def list_events(limit: int = 200) -> list[dict]:
     with conn() as c:
         return [dict(r) for r in c.execute("SELECT * FROM events ORDER BY received_ts DESC LIMIT ?", (limit,))]
