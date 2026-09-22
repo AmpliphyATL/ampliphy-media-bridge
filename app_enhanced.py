@@ -22,7 +22,7 @@ from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 
-from metabridge import autostart, config, db, outputs
+from metabridge import config, db, outputs
 
 config.load()
 from metabridge.core import resolve
@@ -43,14 +43,12 @@ def load_settings() -> dict:
         "cirrus_token": os.environ.get("METABRIDGE_CIRRUS_TOKEN", ""),
         "outputs": os.environ.get("METABRIDGE_OUTPUTS", "log"),
         "tcp_port": os.environ.get("METABRIDGE_TCP_PORT", "8766"),
-        "autostart": True,
     }
 
     # Try to load from JSON file, but env vars override it
     if SETTINGS_FILE.exists():
         try:
             file_data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
-            settings["autostart"] = bool(file_data.get("autostart", True))
             # Only use file data if not set in environment
             if not os.environ.get("METABRIDGE_CIRRUS_CALLSIGN"):
                 settings["cirrus_callsign"] = file_data.get("cirrus_callsign", "")
@@ -123,12 +121,9 @@ def api_get_settings():
 
 
 @app.post("/api/settings")
-def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: str = Form(""), tcp_port: str = Form(""), autostart_on: str = Form("")):
+def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: str = Form(""), tcp_port: str = Form("")):
     """Save settings from dashboard form."""
     s = load_settings()
-    want_autostart = autostart_on == "1"
-    s["autostart"] = want_autostart
-    autostart.set_enabled(want_autostart)
     if callsign:
         s["cirrus_callsign"] = callsign
     if token and token != "***":  # Don't overwrite if they sent the masked version
@@ -422,14 +417,6 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
                 <label>TCP Port<span class="note">For PlayoutONE input</span></label>
                 <input type="text" id="tcp_port" value="{e(settings.get('tcp_port', '8766'))}" placeholder="8766">
             </div>
-            <div class="form-group">
-                <label>Start with Windows<span class="note">Launch automatically when this PC restarts (like DCS Console / PlayoutONE)</span></label>
-                <label style="text-transform:none;font-size:13px;color:#222;display:flex;align-items:center;gap:8px;cursor:pointer">
-                    <input type="checkbox" id="autostart_on" {'checked' if settings.get('autostart', True) else ''} style="width:16px;height:16px;margin:0">
-                    Start MetaBridge automatically at login
-                    <span class="badge {'ok' if autostart.is_enabled() else 'warn'}">{'registered' if autostart.is_enabled() else 'not registered'}</span>
-                </label>
-            </div>
         </div>
 
         <button class="success" onclick="saveSettings()">💾 Save Settings</button>
@@ -451,14 +438,13 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         const token = document.getElementById('cirrus_token').value;
         const outputs = document.getElementById('outputs').value;
         const tcp_port = document.getElementById('tcp_port').value;
-        const autostart_on = document.getElementById('autostart_on').checked ? '1' : '0';
         const status = document.getElementById('save-status');
 
         try {{
             const resp = await fetch('/api/settings', {{
                 method: 'POST',
                 headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-                body: `callsign=${{encodeURIComponent(callsign)}}&token=${{encodeURIComponent(token)}}&outputs=${{encodeURIComponent(outputs)}}&tcp_port=${{encodeURIComponent(tcp_port)}}&autostart_on=${{autostart_on}}`
+                body: `callsign=${{encodeURIComponent(callsign)}}&token=${{encodeURIComponent(token)}}&outputs=${{encodeURIComponent(outputs)}}&tcp_port=${{encodeURIComponent(tcp_port)}}`
             }});
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
@@ -478,6 +464,17 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         document.querySelector('[data-tab="' + name + '"]').classList.add('active');
     }}
     window.addEventListener('load', () => switchTab('{tab}'));
+
+    // Live refresh: while Monitor or Unresolved is showing and the user isn't
+    // typing in a field, reload every 5 s so new songs appear on their own.
+    setInterval(() => {{
+        const active = document.querySelector('.tab-nav a.active');
+        const name = active ? active.getAttribute('data-tab') : '';
+        const typing = ['INPUT','TEXTAREA'].includes((document.activeElement||{{}}).tagName);
+        if ((name === 'monitor' || name === 'unresolved') && !typing) {{
+            window.location.href = '/?tab=' + name;
+        }}
+    }}, 5000);
     </script>
     """
 
@@ -514,7 +511,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         </div>
 
         <div id="tab-monitor" class="tab-content active">
-            <h2>Live Events (latest 50)</h2>
+            <h2>Live Events (latest 50) <span class="small" style="font-weight:400">· auto-refreshes every 5 s</span></h2>
             <div class="section">
             <table>
                 <tr><th>Time</th><th></th><th>Track</th><th>Status</th><th>Resolve Time</th></tr>
