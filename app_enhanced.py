@@ -22,7 +22,7 @@ from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 
-from metabridge import autostart, config, db, outputs
+from metabridge import autostart, config, db, outputs, secrets
 
 config.load()
 from metabridge.core import resolve
@@ -61,7 +61,7 @@ def load_settings() -> dict:
             if not os.environ.get("METABRIDGE_CIRRUS_CALLSIGN"):
                 settings["cirrus_callsign"] = file_data.get("cirrus_callsign", "")
             if not os.environ.get("METABRIDGE_CIRRUS_TOKEN"):
-                settings["cirrus_token"] = file_data.get("cirrus_token", "")
+                settings["cirrus_token"] = secrets.reveal(file_data.get("cirrus_token", ""))
             if not os.environ.get("METABRIDGE_OUTPUTS"):
                 settings["outputs"] = file_data.get("outputs", "log")
             if not os.environ.get("METABRIDGE_TCP_PORT"):
@@ -75,7 +75,9 @@ def load_settings() -> dict:
 def save_settings(settings: dict):
     """Save settings to JSON file."""
     try:
-        SETTINGS_FILE.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        on_disk = dict(settings)
+        on_disk["cirrus_token"] = secrets.protect(settings.get("cirrus_token", ""))  # never plain text on disk
+        SETTINGS_FILE.write_text(json.dumps(on_disk, indent=2), encoding="utf-8")
         # Also update environment variables
         os.environ["METABRIDGE_CIRRUS_CALLSIGN"] = settings.get("cirrus_callsign", "")
         os.environ["METABRIDGE_CIRRUS_TOKEN"] = settings.get("cirrus_token", "")
@@ -101,6 +103,16 @@ def _apply_settings_to_env(settings: dict):
 # Apply whatever was saved from the dashboard on a previous run, BEFORE the
 # startup hook starts the TCP listener - otherwise a fresh launch listens on nothing.
 _apply_settings_to_env(load_settings())
+
+# One-time upgrade: if an older version left the token in plain text, re-save it encrypted.
+try:
+    if SETTINGS_FILE.exists():
+        _raw = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        if _raw.get("cirrus_token") and not secrets.is_protected(_raw["cirrus_token"]):
+            save_settings(load_settings())
+            logging.getLogger("metabridge").info("settings file upgraded: token now encrypted at rest")
+except Exception:
+    logging.getLogger("metabridge").exception("could not upgrade settings file")
 
 
 class _GluedPathRewrite:
@@ -454,7 +466,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
                 <input type="text" id="cirrus_callsign" value="{e(settings.get('cirrus_callsign', ''))}" placeholder="Your station call sign">
             </div>
             <div class="form-group">
-                <label>Cirrus Auth Token<span class="note">SecureNet credential</span></label>
+                <label>Cirrus Auth Token<span class="note">SecureNet credential · stored encrypted (Windows DPAPI)</span></label>
                 <input type="password" id="cirrus_token" placeholder="{'Token saved - leave blank to keep it' if settings.get('cirrus_token') else 'Paste your Cirrus token (will be stored securely)'}">
             </div>
             <div class="form-group">

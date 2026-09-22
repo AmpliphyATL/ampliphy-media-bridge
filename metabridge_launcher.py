@@ -59,6 +59,10 @@ VERSION = f"v.{BUILD_NUMBER}"
 
 PORT = 8765
 URL = f"http://127.0.0.1:{PORT}"
+# Only this PC can reach the dashboard/API unless explicitly opened up:
+#   set METABRIDGE_BIND=0.0.0.0 to allow other machines on the network.
+BIND = os.environ.get("METABRIDGE_BIND", "127.0.0.1")
+os.environ.setdefault("METABRIDGE_TCP_HOST", BIND)  # TCP intake follows the same rule
 
 _server_error = None  # set by the server thread if it dies
 
@@ -115,8 +119,8 @@ def start_server():
         import uvicorn
         from app_enhanced import app  # loads config on import
 
-        log.info("Starting Uvicorn on 0.0.0.0:%s", PORT)
-        uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info", access_log=False, log_config=None)
+        log.info("Starting Uvicorn on %s:%s", BIND, PORT)
+        uvicorn.run(app, host=BIND, port=PORT, log_level="info", access_log=False, log_config=None)
     except Exception as e:  # any failure must be visible
         _server_error = e
         log.exception("Server failed to start")
