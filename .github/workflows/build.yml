@@ -27,7 +27,6 @@ jobs:
         python -m PyInstaller --onefile --console --name "AmpliPhyBridge" --distpath "." --workpath ".build" --specpath ".build" --hidden-import=fastapi --hidden-import=uvicorn --hidden-import=pydantic --hidden-import=requests --hidden-import=app --hidden-import=metabridge ampliphy_bridge_launcher.py
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
-      with:
+    - uses: actions/upload-artifact@v4      with:
         name: AmpliPhyBridge
         path: AmpliPhyBridge.exe
