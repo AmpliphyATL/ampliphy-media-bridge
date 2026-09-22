@@ -108,7 +108,14 @@ def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
     )
 
     if send:
-        for mod in outputs.active_adapters():
+        try:
+            adapters = outputs.active_adapters()
+        except Exception as e:  # bad METABRIDGE_OUTPUTS must not lose the event
+            log.exception("invalid outputs setting; event logged but not sent")
+            from .events import OutputResult
+            enriched.outputs.append(OutputResult("config", False, now(), f"bad outputs setting: {e}"))
+            adapters = []
+        for mod in adapters:
             try:
                 enriched.outputs.append(mod.send(enriched))
             except Exception as e:
