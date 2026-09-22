@@ -18,7 +18,7 @@ AVAILABLE = ["log", "webhook", "securenet_cirrus"]
 
 
 def active_adapters() -> list:
-    names = [n.strip() for n in os.environ.get("METABRIDGE_OUTPUTS", "log").split(",") if n.strip()]
+    names = [n.strip().lower() for n in os.environ.get("METABRIDGE_OUTPUTS", "log").split(",") if n.strip()]
     mods = []
     for n in names:
         if n not in AVAILABLE:
