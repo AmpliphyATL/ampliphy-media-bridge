@@ -73,9 +73,26 @@ def _client(conn, addr):
                 threading.Thread(target=handle, args=(ev,), daemon=True).start()
 
 
+_running_port: int | None = None
+
+
 def start_if_configured() -> bool:
+    """Start the listener on METABRIDGE_TCP_PORT. Safe to call more than once:
+    if it is already up on that port nothing happens."""
+    global _running_port
     port = os.environ.get("METABRIDGE_TCP_PORT")
     if not port:
         return False
-    threading.Thread(target=_serve, args=(int(port),), daemon=True).start()
+    try:
+        port_i = int(port)
+    except ValueError:
+        log.error("bad METABRIDGE_TCP_PORT %r", port)
+        return False
+    if _running_port == port_i:
+        return True
+    if _running_port is not None:
+        log.warning("TCP port changed %d -> %d; restart MetaBridge for it to take effect", _running_port, port_i)
+        return False
+    threading.Thread(target=_serve, args=(port_i,), daemon=True).start()
+    _running_port = port_i
     return True
