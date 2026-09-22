@@ -1,0 +1,36 @@
+{
+  "failures": [
+    {"n": 1,  "title": "The Way You Move", "artist": "Jaydon", "album": ""},
+    {"n": 2,  "title": "Omnivert - Remix", "artist": "Leesh, The Beast, Nor Kin 4 Life", "album": "Omnivert X"},
+    {"n": 3,  "title": "Yaya", "artist": "Compton AV feat. Steelz, Blueface, Lola Brooke, Natalie", "album": ""},
+    {"n": 4,  "title": "Vibin'", "artist": "Danilo Energy", "album": ""},
+    {"n": 5,  "title": "Black Butterfly", "artist": "VinceTheAlien, Cold Pressed Papi", "album": "Poisonous Child"},
+    {"n": 6,  "title": "Up On Me", "artist": "Suki Hana", "album": ""},
+    {"n": 7,  "title": "Expected", "artist": "Jet the 3rd", "album": ""},
+    {"n": 8,  "title": "Fucking Up", "artist": "Terrell Carter", "album": ""},
+    {"n": 9,  "title": "Get Me Bodied Extended Mix", "artist": "Beyoncé", "album": ""},
+    {"n": 10, "title": "Everything Custom", "artist": "Symphonic", "album": ""},
+    {"n": 11, "title": "Thick Fine", "artist": "Sunni Tha Rapper", "album": ""},
+    {"n": 12, "title": "Don't Mind", "artist": "TEO Glacier", "album": ""},
+    {"n": 13, "title": "Bar with Lesh", "artist": "Lady Leshurr", "album": ""},
+    {"n": 14, "title": "Better Than That", "artist": "Marcellus Airlinez, Cody Shane", "album": ""},
+    {"n": 15, "title": "Anytime feat. James Fauntleroy", "artist": "Syd", "album": ""},
+    {"n": 16, "title": "Internet Thug", "artist": "Nor Kin 4 Life feat. RJC Productions", "album": ""},
+    {"n": 17, "title": "10s feat. Jack Mizrahi", "artist": "Jennifer Lopez", "album": ""},
+    {"n": 18, "title": "Back Room", "artist": "Jeronelle feat. Sevn Deep", "album": ""},
+    {"n": 19, "title": "Break Out", "artist": "Jussie Smollett", "album": ""},
+    {"n": 20, "title": "Song Cry feat. Veenus", "artist": "Tay-G", "album": ""},
+    {"n": 21, "title": "Reverse!!", "artist": "MNEK", "album": ""},
+    {"n": 22, "title": "Just What They Want", "artist": "RuPaul", "album": ""}
+  ],
+  "controls": [
+    {"n": 1, "title": "Out of Body", "artist": "Khalid", "album": ""},
+    {"n": 2, "title": "Type Dangerous", "artist": "Mariah Carey", "album": ""},
+    {"n": 3, "title": "Folded", "artist": "Kehlani", "album": ""},
+    {"n": 4, "title": "Rude Boy", "artist": "Rihanna", "album": ""},
+    {"n": 5, "title": "Champagne Shit feat. Quavo & Latto", "artist": "Janelle Monáe", "album": ""},
+    {"n": 6, "title": "Sorry", "artist": "Demi Lovato", "album": ""},
+    {"n": 7, "title": "Favorite Lover", "artist": "Destin Conrad", "album": "Favorite Lover"},
+    {"n": 8, "title": "Reach Out", "artist": "Victoria Monét", "album": ""}
+  ]
+}
