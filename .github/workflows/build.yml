@@ -17,8 +17,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install fastapi uvicorn pydantic requests python-multipart pyinstaller pywebview
     - name: Build executable
-      run: python -m PyInstaller --onefile --windowed --name "AmpliPhyBridge" --distpath "." --workpath ".build" metabridge_launcher_v3.py
-    - name: Upload artifact
+    - run: python -m PyInstaller --onefile --windowed --name "AmpliPhyBridge" --distpath "." --workpath ".build" metabridge_launcher.py    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: AmpliPhyBridge
