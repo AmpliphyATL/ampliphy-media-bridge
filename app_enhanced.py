@@ -30,7 +30,13 @@ from metabridge.inputs import playoutone_http_poll, playoutone_monitor, tcp_list
 from metabridge.pipeline import handle, is_duplicate
 
 logging.basicConfig(level=os.environ.get("METABRIDGE_LOG", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-app = FastAPI(title="AmpliPhy MetaBridge", version="0.5.0")
+try:
+    from build_info import BUILD_NUMBER
+except Exception:
+    BUILD_NUMBER = "dev"
+VERSION = f"v.{BUILD_NUMBER}"
+
+app = FastAPI(title="AmpliPhy MetaBridge", version=VERSION)
 
 # Settings file path (persists credentials entered via dashboard)
 SETTINGS_FILE = pathlib.Path(os.environ.get("METABRIDGE_SETTINGS_FILE") or (pathlib.Path(__file__).resolve().parent / "metabridge.env.json"))
@@ -511,13 +517,13 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
     </script>
     """
 
-    return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AmpliPhy MetaBridge</title>{STYLE}</head><body>
+    return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AmpliPhy MetaBridge {VERSION}</title>{STYLE}</head><body>
     <header>
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
             <div style="font-size:28px;font-weight:bold;color:#007aff;font-family:Georgia,serif">🎵</div>
             <div>
                 <div style="font-size:12px;color:#999;text-transform:uppercase;letter-spacing:1px;font-weight:500">AmpliPhy</div>
-                <div style="font-size:20px;font-weight:600;color:#222">MetaBridge</div>
+                <div style="font-size:20px;font-weight:600;color:#222">MetaBridge <span style="font-size:12px;font-weight:500;color:#999;margin-left:6px">{VERSION}</span></div>
             </div>
             <div style="flex:1"></div>
             <div style="text-align:right;font-size:11px;color:#999">

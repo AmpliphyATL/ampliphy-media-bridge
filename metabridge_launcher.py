@@ -48,6 +48,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("metabridge_launcher")
 
+try:
+    from build_info import BUILD_NUMBER
+except Exception:  # running from source without a stamp
+    BUILD_NUMBER = "dev"
+VERSION = f"v.{BUILD_NUMBER}"
+
 PORT = 8765
 URL = f"http://127.0.0.1:{PORT}"
 
@@ -145,7 +151,7 @@ def open_dashboard():
         import webview
         log.info("Opening native window (minimized=%s)", AUTOSTARTED)
         webview.create_window(
-            title="AmpliPhy MetaBridge",
+            title=f"AmpliPhy MetaBridge {VERSION}",
             url=URL,
             width=1200,
             height=800,
@@ -160,7 +166,7 @@ def open_dashboard():
 
 def main():
     log.info("=" * 60)
-    log.info("AmpliPhy MetaBridge Launcher  (app dir: %s, autostart=%s)", APP_DIR, AUTOSTARTED)
+    log.info("AmpliPhy MetaBridge %s  (app dir: %s, autostart=%s)", VERSION, APP_DIR, AUTOSTARTED)
     log.info("=" * 60)
     register_autostart()
 
