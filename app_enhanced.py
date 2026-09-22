@@ -79,6 +79,24 @@ def save_settings(settings: dict):
         logging.getLogger("metabridge").error(f"Could not save settings: {e}")
 
 
+def _apply_settings_to_env(settings: dict):
+    """Make the saved dashboard settings visible to the adapters/listeners,
+    which read os.environ. Values already set in the environment win."""
+    for env_key, key in (
+        ("METABRIDGE_CIRRUS_CALLSIGN", "cirrus_callsign"),
+        ("METABRIDGE_CIRRUS_TOKEN", "cirrus_token"),
+        ("METABRIDGE_OUTPUTS", "outputs"),
+        ("METABRIDGE_TCP_PORT", "tcp_port"),
+    ):
+        if settings.get(key) and not os.environ.get(env_key):
+            os.environ[env_key] = str(settings[key])
+
+
+# Apply whatever was saved from the dashboard on a previous run, BEFORE the
+# startup hook starts the TCP listener - otherwise a fresh launch listens on nothing.
+_apply_settings_to_env(load_settings())
+
+
 class _GluedPathRewrite:
     """PlayoutONE Monitor appends its Parameters box to the URL verbatim."""
     PREFIX = b"/inbound/playoutone"
@@ -139,6 +157,7 @@ def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: 
         s["tcp_port"] = tcp_port
 
     save_settings(s)
+    tcp_listener.start_if_configured()  # bring the listener up if it wasn't already
     return {"status": "saved", "cirrus_callsign": s["cirrus_callsign"], "outputs": s["outputs"]}
 
 
