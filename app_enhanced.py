@@ -121,7 +121,7 @@ def api_get_settings():
 
 
 @app.post("/api/settings")
-def api_save_settings(callsign: str = "", token: str = "", outputs: str = "", tcp_port: str = ""):
+def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: str = Form(""), tcp_port: str = Form("")):
     """Save settings from dashboard form."""
     s = load_settings()
     if callsign:
@@ -407,7 +407,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             </div>
             <div class="form-group">
                 <label>Cirrus Auth Token<span class="note">SecureNet credential</span></label>
-                <input type="password" id="cirrus_token" placeholder="Paste your Cirrus token (will be stored securely)">
+                <input type="password" id="cirrus_token" placeholder="{'Token saved - leave blank to keep it' if settings.get('cirrus_token') else 'Paste your Cirrus token (will be stored securely)'}">
             </div>
             <div class="form-group">
                 <label>Enabled Outputs<span class="note">Comma-separated: log, securenet_cirrus, webhook</span></label>
@@ -446,12 +446,11 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
                 headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
                 body: `callsign=${{encodeURIComponent(callsign)}}&token=${{encodeURIComponent(token)}}&outputs=${{encodeURIComponent(outputs)}}&tcp_port=${{encodeURIComponent(tcp_port)}}`
             }});
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
-            status.textContent = '✓ Saved!';
+            status.textContent = '✓ Saved! Reloading...';
             status.style.color = '#2e9e5b';
-            setTimeout(() => {{ status.textContent = ''; }}, 3000);
-            // Clear password field after save
-            if (token) document.getElementById('cirrus_token').value = '';
+            setTimeout(() => {{ window.location.href = '/?tab=settings'; }}, 600);
         }} catch (e) {{
             status.textContent = '✗ Error saving';
             status.style.color = '#dc3545';
