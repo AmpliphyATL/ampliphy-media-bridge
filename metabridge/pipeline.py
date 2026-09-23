@@ -56,6 +56,60 @@ def looks_like_template(ev: TrackEvent) -> str | None:
 REINFORCE_AT = [float(x) for x in os.environ.get("METABRIDGE_CIRRUS_REINFORCE_AT", "15,45").split(",") if x.strip()]
 
 
+# What Cirrus actually displayed vs. what MetaBridge sent, per event (shown on the Monitor tab).
+WATCH_EVERY = float(os.environ.get("METABRIDGE_CIRRUS_WATCH_SECONDS", "8"))
+cirrus_watch: dict = {}   # event_id -> {"checks": n, "restored": n, "last": "ok"|"overwritten"|"unreachable"}
+
+
+def _same_text(a: str, b: str) -> bool:
+    from .normalize import basic
+    return basic(a or "") == basic(b or "")
+
+
+def _cirrus_watchdog(enriched: EnrichedTrackEvent, duration_ms: int):
+    """While the song plays, keep reading Cirrus's public now-playing feed. If Cirrus is
+    showing something other than what MetaBridge sent (its own in-stream update, a
+    different cover), post ours again immediately. Self-healing; nothing to configure."""
+    try:
+        from .outputs import securenet_cirrus as sc
+    except Exception:
+        return
+    ev = enriched.event
+    started = enriched.resolve_end
+    deadline = started + (duration_ms / 1000.0) - 8
+    state = cirrus_watch.setdefault(ev.event_id, {"checks": 0, "restored": 0, "last": "pending"})
+    time.sleep(6)   # let the first post settle
+    while time.time() < deadline:
+        st = sc.fetch_status()
+        state["checks"] += 1
+        if st is None:
+            state["last"] = "unreachable"
+        else:
+            wrong_song = not (_same_text(st["title"], ev.title) and _same_text(st["artist"], ev.artist))
+            wrong_cover = bool(enriched.artwork_url) and st["cover"] and not _same_text(st["cover"], enriched.artwork_url) \
+                          and st["cover"].split("?")[0] != (enriched.artwork_url or "").split("?")[0]
+            if wrong_song or wrong_cover:
+                state["last"] = "overwritten"
+                mod = _cirrus_adapter()
+                if mod:
+                    try:
+                        res = mod.send(enriched)
+                        if res.ok:
+                            state["restored"] += 1
+                            log.info("%s — %s: Cirrus showed %r / %r%s → restored MetaBridge artwork",
+                                     ev.artist, ev.title, st["artist"], st["title"],
+                                     " (different cover)" if wrong_cover and not wrong_song else "")
+                    except Exception:
+                        log.exception("restore send failed")
+            else:
+                state["last"] = "ok"
+        time.sleep(WATCH_EVERY)
+    # keep the dict small
+    if len(cirrus_watch) > 500:
+        for k in list(cirrus_watch)[:-300]:
+            cirrus_watch.pop(k, None)
+
+
 def _cirrus_adapter():
     for mod in outputs.active_adapters():
         if getattr(mod, "NAME", None) == "securenet_cirrus":
@@ -172,6 +226,8 @@ def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
                 args=(enriched, ev.duration_ms, first_ok),
                 daemon=True
             ).start()
+            if first_ok and ev.duration_ms >= 30000:
+                threading.Thread(target=_cirrus_watchdog, args=(enriched, ev.duration_ms), daemon=True).start()
 
     try:
         db.log_event(enriched)
