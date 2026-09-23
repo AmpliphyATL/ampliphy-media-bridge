@@ -8,6 +8,7 @@ The score is then divided by the maximum score *available for this input*
 from __future__ import annotations
 
 import os
+import re
 from difflib import SequenceMatcher
 
 from .normalize import basic, parse_artist, parse_title
@@ -113,8 +114,31 @@ def score_candidate(c: Candidate, artist: str, title: str, album: str = "") -> C
     return c
 
 
+_COMPILATION_WORDS = re.compile(
+    r"\b(various|compilation|mix|mixes|megamix|hits|greatest|best of|collection|anthology|"
+    r"presents|now that'?s|now \d+|party|vol\.?|volume|soundtrack|ost|sampler|jams|throwback|"
+    r"classics|essentials|top \d+|\d{2}s? (hits|jams)|'\d\d\b)", re.I)
+_PROVIDER_ORDER = {"apple_music": 0, "deezer": 1, "spotify": 2, "musicbrainz": 3}
+
+
+def album_kind(c: Candidate) -> int:
+    """0 = studio album, 1 = single/EP, 2 = compilation. Used only to break ties."""
+    alb = (c.album or "").strip()
+    if (c.album_artist or "").strip().lower() in ("various artists", "various", "verschiedene interpreten"):
+        return 2
+    if _COMPILATION_WORDS.search(alb):
+        return 2
+    low = alb.lower()
+    if low.endswith(" - single") or low.endswith(" - ep") or basic(alb) == basic(c.title):
+        return 1
+    return 0
+
+
 def best(cands: list[Candidate]) -> Candidate | None:
+    """Highest confidence wins. Among equals (the common case: an artist's own album AND a
+    compilation both match artist+title exactly) the pecking order is studio album, then
+    single, then compilation, then provider order - so the same song always gets the same,
+    sensible artwork instead of whichever record the API happened to list first."""
     if not cands:
         return None
-    # Prefer higher confidence; tie-break toward non-single "album" artwork? Keep simple: confidence, then provider order.
-    return max(cands, key=lambda c: c.confidence)
+    return max(cands, key=lambda c: (round(c.confidence, 2), -album_kind(c), -_PROVIDER_ORDER.get(c.provider, 9)))

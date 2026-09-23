@@ -45,6 +45,7 @@ class Candidate:
     explicit: bool | None = None
     provider_url: str = ""
     all_artists: list = field(default_factory=list)   # extra credited artists if the API gives them
+    album_artist: str = ""                            # "Various Artists" on compilations (when the API says)
     score: float = 0.0
     confidence: float = 0.0
     reasons: list = field(default_factory=list)
@@ -102,6 +103,7 @@ def itunes(artist: str, title: str, album: str = "", limit: int = 12) -> list[Ca
             artist=r.get("artistName", ""),
             title=r.get("trackName", ""),
             album=r.get("collectionName", ""),
+            album_artist=r.get("collectionArtistName", ""),
             artwork_url=art,
             duration_ms=int(r.get("trackTimeMillis") or 0),
             explicit=(r.get("trackExplicitness") == "explicit") if r.get("trackExplicitness") else None,
