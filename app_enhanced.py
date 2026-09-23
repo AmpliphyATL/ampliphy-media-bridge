@@ -695,15 +695,34 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
     }}
     window.addEventListener('load', () => switchTab('{tab}'));
 
+    // Logo: animate a couple of loops, then hold still so the dashboard costs the
+    // PC (which is also running the playout system) nothing. Stops entirely when
+    // the window is hidden; a hover wakes it for a couple more loops.
+    (function () {{
+        const v = document.getElementById('logo'); if (!v) return;
+        let loops = 0;
+        v.addEventListener('ended', () => {{ if (++loops < 2) {{ v.currentTime = 0; v.play(); }} }});
+        window.logoWake = () => {{ loops = 0; v.currentTime = 0; v.play(); }};
+        document.addEventListener('visibilitychange', () => {{ if (document.hidden) v.pause(); }});
+    }})();
+
     // Live refresh: while Monitor or Unresolved is showing and the user isn't
-    // typing in a field, reload every 5 s so new songs appear on their own.
-    setInterval(() => {{
+    // typing, fetch the page in the background every 5 s and swap in just the
+    // parts that change - no full reload, no video restart, no flicker.
+    setInterval(async () => {{
+        if (document.hidden) return;
         const active = document.querySelector('.tab-nav a.active');
         const name = active ? active.getAttribute('data-tab') : '';
         const typing = ['INPUT','TEXTAREA'].includes((document.activeElement||{{}}).tagName);
-        if ((name === 'monitor' || name === 'unresolved') && !typing) {{
-            window.location.href = '/?tab=' + name;
-        }}
+        if (!((name === 'monitor' || name === 'unresolved') && !typing)) return;
+        try {{
+            const html = await (await fetch('/?tab=' + name, {{cache: 'no-store'}})).text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            for (const id of ['tab-monitor', 'tab-unresolved', 'kpis']) {{
+                const a = document.getElementById(id), b = doc.getElementById(id);
+                if (a && b && a.innerHTML !== b.innerHTML) a.innerHTML = b.innerHTML;
+            }}
+        }} catch (e) {{}}
     }}, 5000);
     </script>
     """
@@ -714,7 +733,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
     <header>
         <div style="display:flex;align-items:center;gap:12px">
             <div class="brand">
-                <video autoplay muted loop playsinline aria-label="AmpliPhy"><source src="/assets/logo.mp4" type="video/mp4"></video>
+                <video id="logo" autoplay muted playsinline aria-label="AmpliPhy" onmouseenter="logoWake()"><source src="/assets/logo.mp4" type="video/mp4"></video>
                 <div class="brand-text"><span class="app">MetaBridge</span><span class="ver">{VERSION}</span></div>
             </div>
             <div style="flex:1"></div>
@@ -726,7 +745,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         </div>
     </header>
     <main>
-        <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+        <div id="kpis" style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
             <div class="kpi"><b>{st['n'] or 0}</b><span>events</span></div>
             <div class="kpi"><b>{st['resolved_pct']}%</b><span>resolved</span></div>
             <div class="kpi"><b>{st['cache_hits'] or 0}</b><span>cache hits</span></div>
