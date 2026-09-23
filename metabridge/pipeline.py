@@ -49,27 +49,62 @@ def looks_like_template(ev: TrackEvent) -> str | None:
     return None
 
 
-def _retry_cirrus_send(enriched: EnrichedTrackEvent, duration_ms: int):
-    """Retry sending to Cirrus at intervals while the song is still playing."""
-    if duration_ms < 30000:  # songs shorter than 30 sec don't retry
-        return
-    retry_interval = 20  # seconds between retries
-    retry_deadline = (duration_ms / 1000.0) - 10  # stop 10 sec before song ends
+# Cirrus shows whichever update it heard LAST. Its own in-stream (ICY) update lands a
+# few seconds after the song starts, so a single post at second 0 can be overwritten.
+# MetaBridge therefore re-posts the same package at these offsets (seconds after the
+# song started) so its artwork has the last word. No station-side configuration needed.
+REINFORCE_AT = [float(x) for x in os.environ.get("METABRIDGE_CIRRUS_REINFORCE_AT", "15,45").split(",") if x.strip()]
+
+
+def _cirrus_adapter():
+    for mod in outputs.active_adapters():
+        if getattr(mod, "NAME", None) == "securenet_cirrus":
+            return mod
+    return None
+
+
+def _cirrus_followups(enriched: EnrichedTrackEvent, duration_ms: int, first_ok: bool):
+    """Re-post to Cirrus while the song is still playing.
+    - If the first post failed: retry every 20 s until it succeeds (song must be >= 30 s).
+    - Once a post has succeeded: reinforce at REINFORCE_AT offsets so Cirrus's own
+      in-stream update cannot overwrite MetaBridge's artwork."""
+    started = enriched.resolve_end
+    deadline = started + (duration_ms / 1000.0) - 10 if duration_ms else started + 60
+    ok = first_ok
     attempt = 1
-    while time.time() - enriched.resolve_end < retry_deadline:
-        time.sleep(retry_interval)
+    while not ok and duration_ms >= 30000 and time.time() < deadline:
+        time.sleep(20)
         attempt += 1
         try:
-            for mod in outputs.active_adapters():
-                if getattr(mod, "NAME", None) == "securenet_cirrus":
-                    result = mod.send(enriched)
-                    if result.ok:
-                        log.info("%s — %s (retry %d): Cirrus post succeeded", enriched.event.artist, enriched.event.title, attempt)
-                        return
-                    else:
-                        log.warning("%s — %s (retry %d): Cirrus post failed: %s", enriched.event.artist, enriched.event.title, attempt, result.status)
-        except Exception as e:
+            mod = _cirrus_adapter()
+            if not mod:
+                return
+            result = mod.send(enriched)
+            ok = bool(result.ok)
+            if ok:
+                log.info("%s — %s (retry %d): Cirrus post succeeded", enriched.event.artist, enriched.event.title, attempt)
+            else:
+                log.warning("%s — %s (retry %d): Cirrus post failed: %s", enriched.event.artist, enriched.event.title, attempt, result.status)
+        except Exception:
             log.exception("retry send failed for %s - %s", enriched.event.artist, enriched.event.title)
+    if not ok:
+        return
+    for offset in sorted(REINFORCE_AT):
+        at = started + offset
+        if at >= deadline:
+            break
+        delay = at - time.time()
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            mod = _cirrus_adapter()
+            if not mod:
+                return
+            result = mod.send(enriched)
+            log.info("%s — %s: Cirrus reinforced at +%ds (%s)", enriched.event.artist, enriched.event.title,
+                     int(offset), "ok" if result.ok else result.status)
+        except Exception:
+            log.exception("reinforce send failed for %s - %s", enriched.event.artist, enriched.event.title)
 
 
 def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
@@ -127,14 +162,14 @@ def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
                 from .events import OutputResult
                 enriched.outputs.append(OutputResult(getattr(mod, "NAME", "?"), False, now(), f"error: {e}"))
 
-        # Spawn retry thread for Cirrus only if the first post did not succeed
-        # (e.g. Cirrus not configured yet, network blip). A successful post is not repeated.
-        cirrus_ok = any(getattr(r, "adapter", None) == "securenet_cirrus" and getattr(r, "ok", False)
-                        for r in enriched.outputs)
-        if ev.duration_ms and ev.duration_ms >= 30000 and not cirrus_ok:
+        # Follow-up posts to Cirrus: retry if the first one failed, then reinforce so
+        # MetaBridge's artwork is the last update Cirrus hears for this song.
+        cirrus_results = [r for r in enriched.outputs if getattr(r, "adapter", None) == "securenet_cirrus"]
+        if cirrus_results and ev.duration_ms:
+            first_ok = any(getattr(r, "ok", False) for r in cirrus_results)
             threading.Thread(
-                target=_retry_cirrus_send,
-                args=(enriched, ev.duration_ms),
+                target=_cirrus_followups,
+                args=(enriched, ev.duration_ms, first_ok),
                 daemon=True
             ).start()
 
