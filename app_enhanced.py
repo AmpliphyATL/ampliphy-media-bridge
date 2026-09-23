@@ -51,6 +51,93 @@ def asset(name: str):
     return FileResponse(str(f), headers={"Cache-Control": "public, max-age=86400"})
 
 
+SETUP_MD = pathlib.Path(getattr(_sys, "_MEIPASS", pathlib.Path(__file__).resolve().parent)) / "SETUP.md"
+
+
+def _md_to_html(md: str) -> str:
+    """Tiny Markdown renderer for the bundled setup guide (headings, lists, tables, code, bold)."""
+    import re
+    e = html.escape
+    out, in_code, in_list, table = [], False, False, []
+
+    def flush_table():
+        nonlocal table
+        if not table:
+            return
+        rows = [r for r in table if not re.match(r"^\s*\|?\s*-{2,}", r)]
+        cells = [[c.strip() for c in re.split(r"(?<!\\)\|", r.strip().strip("|"))] for r in rows]
+        h = "<table><tr>" + "".join(f"<th>{inline(c)}</th>" for c in cells[0]) + "</tr>"
+        for r in cells[1:]:
+            h += "<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>"
+        out.append(h + "</table>")
+        table = []
+
+    def inline(t):
+        t = e(t).replace("\\|", "|")
+        t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
+        t = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", t)
+        return t
+
+    # Join wrapped lines: a line that does not start a new block continues the previous one.
+    joined, code_block = [], False
+    for raw in md.splitlines():
+        if raw.startswith("```"):
+            code_block = not code_block
+            joined.append(raw); continue
+        starts_block = code_block or not raw.strip() or re.match(r"^(#{1,6}\s|\s*(-|\d+\.)\s|\s*\||---$)", raw)
+        if joined and not starts_block and joined[-1].strip() and not joined[-1].startswith("```") \
+                and not joined[-1].lstrip().startswith("|") and joined[-1].strip() != "---" and not re.match(r"^#{1,6}\s", joined[-1]):
+            joined[-1] = joined[-1].rstrip() + " " + raw.strip()
+        else:
+            joined.append(raw)
+    for line in joined:
+        if line.startswith("```"):
+            if in_code:
+                out.append("</pre>")
+            else:
+                flush_table(); out.append("<pre>")
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(e(line)); continue
+        if line.lstrip().startswith("|"):
+            table.append(line); continue
+        flush_table()
+        if in_list and not re.match(r"^\s*(-|\d+\.)\s", line):
+            out.append("</ul>"); in_list = False
+        m = re.match(r"^(#{1,6})\s+(.*)", line)
+        if m:
+            out.append(f"<h{len(m.group(1))}>{inline(m.group(2))}</h{len(m.group(1))}>"); continue
+        if line.strip() == "---":
+            out.append("<hr>"); continue
+        m = re.match(r"^\s*(-|\d+\.)\s+(.*)", line)
+        if m:
+            if not in_list:
+                out.append("<ul>"); in_list = True
+            out.append(f"<li>{inline(m.group(2))}</li>"); continue
+        if line.strip():
+            out.append(f"<p>{inline(line)}</p>")
+    flush_table()
+    if in_list:
+        out.append("</ul>")
+    return "\n".join(out)
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_guide():
+    try:
+        md = SETUP_MD.read_text(encoding="utf-8")
+    except Exception:
+        md = "# Setup guide\n\nSETUP.md was not bundled with this build."
+    body = _md_to_html(md)
+    return f"""<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AmpliPhy MetaBridge {VERSION} — Setup Guide</title>
+    <script>(function(){{try{{var t=localStorage.getItem('mb-theme');if(!t)t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';document.documentElement.setAttribute('data-theme',t);}}catch(e){{}}}})();</script>
+    {STYLE}<style>main{{max-width:900px;padding:0 24px}} pre{{background:var(--panel-3);border:1px solid var(--line);padding:12px;border-radius:4px;overflow:auto;font-size:12px}} code{{background:var(--panel-3);padding:1px 4px;border-radius:3px;font-size:12px}} hr{{border:0;border-top:1px solid var(--line);margin:24px 0}} h1{{font-size:22px;margin:16px 0}} h2{{margin-top:28px}} h3{{font-size:14px;margin:18px 0 8px}} li{{margin:4px 0}} table{{margin:8px 0 16px}}</style></head><body>
+    <header><div style="display:flex;align-items:center;gap:12px"><div class="brand"><div class="brand-text"><span class="app">MetaBridge</span><span class="ver">{VERSION}</span> <span class="ver">· Setup Guide</span></div></div><div style="flex:1"></div><a href="/" style="color:#8a8aa8;font-size:12px">← Back to dashboard</a></div></header>
+    <main>{body}</main></body></html>"""
+
+
 # Settings file path (persists credentials entered via dashboard)
 SETTINGS_FILE = pathlib.Path(os.environ.get("METABRIDGE_SETTINGS_FILE") or (pathlib.Path(__file__).resolve().parent / "metabridge.env.json"))
 
@@ -621,6 +708,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             <div style="flex:1"></div>
             <div class="header-right">
                 <div><div>Real-Time Metadata Enrichment</div><div>SecureNet Cirrus Integration</div></div>
+                <a href="/setup" class="theme-btn" style="text-decoration:none;display:inline-block">📖 Setup Guide</a>
                 <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Switch light / dark">🌙 Dark</button>
             </div>
         </div>
