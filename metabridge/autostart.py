@@ -23,7 +23,7 @@ def is_windows() -> bool:
 def launch_command() -> str:
     """The exact command Windows should run at login."""
     if getattr(sys, "frozen", False):
-        exe = sys.executable
+        exe = os.environ.get("METABRIDGE_AUTOSTART_EXE") or sys.executable
         return f'"{exe}" {AUTOSTART_FLAG}'
     # Running from source: python + launcher script
     script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "metabridge_launcher.py")
