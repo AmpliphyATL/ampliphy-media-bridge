@@ -27,7 +27,7 @@ from metabridge import autostart, config, db, outputs, secrets
 config.load()
 from metabridge.core import resolve
 from metabridge.inputs import playoutone_http_poll, playoutone_monitor, tcp_listener
-from metabridge.pipeline import handle, is_duplicate
+from metabridge.pipeline import cirrus_watch, handle, is_duplicate
 
 logging.basicConfig(level=os.environ.get("METABRIDGE_LOG", "INFO"), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 try:
@@ -557,12 +557,24 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         outs = json.loads(r["outputs_json"] or "[]")
         has_art = r['artwork_url'] is not None and r['artwork_url'] != ""
         row_class = "" if has_art else "unresolved-row"
+        w = cirrus_watch.get(r.get('event_id') or "", None)
+        if w is None:
+            cirrus_cell = "<span class='small'>—</span>"
+        elif w["restored"]:
+            cirrus_cell = f"<span class='badge warn' title='Cirrus replaced our update; MetaBridge re-posted'>↻ restored ×{w['restored']}</span>"
+        elif w["last"] == "ok":
+            cirrus_cell = "<span class='badge ok' title='Cirrus is showing what MetaBridge sent'>✓ on air</span>"
+        elif w["last"] == "unreachable":
+            cirrus_cell = "<span class='badge' title='Could not read the Cirrus status feed'>? feed</span>"
+        else:
+            cirrus_cell = "<span class='small'>watching…</span>"
         ev_rows += (f"<tr class='{row_class}'>"
                     f"<td class='small'>{time.strftime('%H:%M:%S', time.localtime(r['received_ts']))}</td>"
                     f"<td>{'<img src=' + chr(34) + e(r['artwork_url']) + chr(34) + ' width=36>' if has_art else '—'}</td>"
                     f"<td><b>{e(r['artist'])}</b><br><span class='small'>{e(r['title'])}</span></td>"
                     f"<td class='{'ok' if has_art else 'no'}'><strong>{'✓ Resolved' if has_art else '✗ Unresolved'}</strong><br><span class='small'>{r['confidence']:.2f}</span></td>"
                     f"<td class='small'>{fmt_ms(r['resolve_ms'])}</td>"
+                    f"<td>{cirrus_cell}</td>"
                     f"</tr>")
 
     # Unresolved top tracks
@@ -734,8 +746,8 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             <h2>Live Events (latest 50) <span class="small" style="font-weight:400">· auto-refreshes every 5 s</span></h2>
             <div class="section">
             <table>
-                <tr><th>Time</th><th></th><th>Track</th><th>Status</th><th>Resolve Time</th></tr>
-                {ev_rows if ev_rows else '<tr><td colspan="5" style="text-align:center;color:var(--muted-2);padding:32px">No events yet — waiting for input from PlayoutONE</td></tr>'}
+                <tr><th>Time</th><th></th><th>Track</th><th>Status</th><th>Resolve Time</th><th>Cirrus</th></tr>
+                {ev_rows if ev_rows else '<tr><td colspan="6" style="text-align:center;color:var(--muted-2);padding:32px">No events yet — waiting for input from PlayoutONE</td></tr>'}
             </table>
             </div>
         </div>
