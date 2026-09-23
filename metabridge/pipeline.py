@@ -59,6 +59,7 @@ REINFORCE_AT = [float(x) for x in os.environ.get("METABRIDGE_CIRRUS_REINFORCE_AT
 # What Cirrus actually displayed vs. what MetaBridge sent, per event (shown on the Monitor tab).
 WATCH_EVERY = float(os.environ.get("METABRIDGE_CIRRUS_WATCH_SECONDS", "8"))
 cirrus_watch: dict = {}   # event_id -> {"checks": n, "restored": n, "last": "ok"|"overwritten"|"unreachable"}
+_latest_event: dict = {"id": None}   # whatever PlayoutONE sent most recently, including ad breaks
 
 
 def _same_text(a: str, b: str) -> bool:
@@ -80,6 +81,11 @@ def _cirrus_watchdog(enriched: EnrichedTrackEvent, duration_ms: int):
     state = cirrus_watch.setdefault(ev.event_id, {"checks": 0, "restored": 0, "last": "pending"})
     time.sleep(6)   # let the first post settle
     while time.time() < deadline:
+        if _latest_event["id"] != ev.event_id:
+            # Something newer started (next song, an ad break, a sweeper). Stop guarding
+            # this song immediately so we never paint over what is actually on air.
+            state["last"] = "ended"
+            return
         st = sc.fetch_status()
         state["checks"] += 1
         if st is None:
@@ -164,6 +170,7 @@ def _cirrus_followups(enriched: EnrichedTrackEvent, duration_ms: int, first_ok: 
 def handle(ev: TrackEvent, send: bool = True) -> EnrichedTrackEvent:
     """Resolve one track event and deliver it. Never raises — a bad lookup must not stop the station."""
     t0 = now()
+    _latest_event["id"] = ev.event_id
     bad = looks_like_template(ev)
     if bad:
         if bad == "empty artist":
