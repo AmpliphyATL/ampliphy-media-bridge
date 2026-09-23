@@ -210,6 +210,22 @@ def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: 
     return {"status": "saved", "cirrus_callsign": s["cirrus_callsign"], "outputs": s["outputs"]}
 
 
+@app.post("/api/shutdown")
+def api_shutdown(request: Request):
+    """Used by a newer build to close this one during an in-place upgrade. Local only."""
+    client = (request.client.host if request.client else "") or ""
+    if client not in ("127.0.0.1", "::1"):
+        return JSONResponse({"error": "local only"}, status_code=403)
+    import threading
+    logging.getLogger("metabridge").info("shutdown requested (upgrade in progress)")
+
+    def _die():
+        time.sleep(0.5)
+        os._exit(0)
+    threading.Thread(target=_die, daemon=True).start()
+    return {"status": "shutting down"}
+
+
 # ============================================================ Intake: PlayoutONE Monitor
 @app.api_route("/inbound/playoutone", methods=["GET", "POST"], response_class=PlainTextResponse)
 async def inbound_playoutone(request: Request, background: BackgroundTasks):

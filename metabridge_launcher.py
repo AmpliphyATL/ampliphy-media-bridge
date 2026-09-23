@@ -178,6 +178,100 @@ def start_server():
 
 
 AUTOSTARTED = "--autostart" in sys.argv  # launched by Windows at login
+INSTALLED_EXE = DATA_DIR / "AmpliPhyBridge.exe"   # the one true copy, next to the settings
+
+
+def _stop_running_instance():
+    """Ask a running MetaBridge to quit; force it if it is too old to know how."""
+    import subprocess
+    if not port_in_use(PORT):
+        return
+    try:
+        import requests
+        requests.post(f"{URL}/api/shutdown", timeout=3)   # v45+ understands this
+    except Exception:
+        pass
+    for _ in range(20):
+        if not port_in_use(PORT):
+            break
+        time.sleep(0.25)
+    if port_in_use(PORT) and sys.platform.startswith("win"):
+        # Older build (no shutdown endpoint): close it the blunt way, but never ourselves.
+        try:
+            subprocess.run(["taskkill", "/F", "/FI", "IMAGENAME eq AmpliPhyBridge.exe", "/FI", f"PID ne {os.getpid()}"],
+                           capture_output=True, timeout=15, creationflags=0x08000000)
+        except Exception:
+            log.exception("taskkill failed")
+        for _ in range(20):
+            if not port_in_use(PORT):
+                break
+            time.sleep(0.25)
+
+
+def _make_shortcut():
+    """Desktop shortcut to the installed copy (best effort, Windows only)."""
+    import subprocess
+    try:
+        desktop = pathlib.Path(os.environ.get("USERPROFILE", "")) / "Desktop"
+        if not desktop.is_dir():
+            return
+        lnk = desktop / "AmpliPhy MetaBridge.lnk"
+        ps = (f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{lnk}');"
+              f"$s.TargetPath='{INSTALLED_EXE}';$s.WorkingDirectory='{DATA_DIR}';"
+              f"$s.IconLocation='{INSTALLED_EXE},0';$s.Description='AmpliPhy MetaBridge';$s.Save()")
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                       capture_output=True, timeout=20, creationflags=0x08000000)
+    except Exception:
+        log.exception("could not create desktop shortcut")
+
+
+def self_install():
+    """Running from Downloads (or anywhere that is not the install folder)?
+    Then this IS an upgrade: close the old copy, overwrite it with this exe,
+    start the installed copy and exit. The user just unzips and double-clicks."""
+    if not (getattr(sys, "frozen", False) and sys.platform.startswith("win")):
+        return False
+    if "--no-install" in sys.argv:
+        return False
+    me = pathlib.Path(sys.executable).resolve()
+    try:
+        if me == INSTALLED_EXE.resolve():
+            return False
+    except Exception:
+        return False
+    import shutil, subprocess
+    log.info("Upgrade: installing %s -> %s", me, INSTALLED_EXE)
+    _stop_running_instance()
+    last = None
+    for _ in range(20):   # the old exe may still be releasing its file lock
+        try:
+            shutil.copy2(me, INSTALLED_EXE)
+            last = None
+            break
+        except Exception as e:
+            last = e
+            time.sleep(0.5)
+    if last is not None:
+        show_error("AmpliPhy MetaBridge upgrade", f"Could not replace the installed copy:\n{INSTALLED_EXE}\n\n{last}")
+        return False
+    _make_shortcut()
+    try:
+        from metabridge import autostart
+        autostart_wanted = True
+        try:
+            import json
+            autostart_wanted = json.loads(SETTINGS_FILE.read_text(encoding="utf-8")).get("autostart", True) if SETTINGS_FILE.exists() else True
+        except Exception:
+            pass
+        if autostart_wanted:
+            # Point the Windows startup entry at the installed copy, not the Downloads one.
+            os.environ["METABRIDGE_AUTOSTART_EXE"] = str(INSTALLED_EXE)
+            autostart.enable()
+    except Exception:
+        log.exception("could not refresh start-with-Windows entry")
+    subprocess.Popen([str(INSTALLED_EXE)], cwd=str(DATA_DIR), close_fds=True)
+    log.info("Installed copy started; this temporary copy is exiting")
+    return True
 
 
 def register_autostart():
@@ -226,6 +320,8 @@ def main():
     log.info("=" * 60)
     log.info("AmpliPhy MetaBridge %s  (app dir: %s, data dir: %s, autostart=%s)", VERSION, APP_DIR, DATA_DIR, AUTOSTARTED)
     log.info("=" * 60)
+    if self_install():
+        return
     register_autostart()
 
     if port_in_use(PORT):
