@@ -695,17 +695,6 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
     }}
     window.addEventListener('load', () => switchTab('{tab}'));
 
-    // Logo: animate a couple of loops, then hold still so the dashboard costs the
-    // PC (which is also running the playout system) nothing. Stops entirely when
-    // the window is hidden; a hover wakes it for a couple more loops.
-    (function () {{
-        const v = document.getElementById('logo'); if (!v) return;
-        let loops = 0;
-        v.addEventListener('ended', () => {{ if (++loops < 2) {{ v.currentTime = 0; v.play(); }} }});
-        window.logoWake = () => {{ loops = 0; v.currentTime = 0; v.play(); }};
-        document.addEventListener('visibilitychange', () => {{ if (document.hidden) v.pause(); }});
-    }})();
-
     // Live refresh: while Monitor or Unresolved is showing and the user isn't
     // typing, fetch the page in the background every 5 s and swap in just the
     // parts that change - no full reload, no video restart, no flicker.
@@ -733,7 +722,7 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
     <header>
         <div style="display:flex;align-items:center;gap:12px">
             <div class="brand">
-                <video id="logo" autoplay muted playsinline aria-label="AmpliPhy" onmouseenter="logoWake()"><source src="/assets/logo.mp4" type="video/mp4"></video>
+                <img src="/assets/logo.webp" alt="AmpliPhy">
                 <div class="brand-text"><span class="app">MetaBridge</span><span class="ver">{VERSION}</span></div>
             </div>
             <div style="flex:1"></div>
