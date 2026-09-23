@@ -74,6 +74,35 @@ TIMEOUT = float(os.environ.get("METABRIDGE_OUTPUT_TIMEOUT", "6"))
 log = logging.getLogger("metabridge.cirrus")
 
 
+def status_url(cfg: dict | None = None) -> str:
+    """The public 'what is Cirrus showing right now' feed the station's players read.
+    Same host family as the API (streamdb9 -> streamdb9web)."""
+    cfg = cfg or _cfg()
+    explicit = os.environ.get("METABRIDGE_CIRRUS_STATUS_URL")
+    if explicit:
+        return explicit.replace("{callsign}", cfg["callsign"])
+    import re as _re
+    m = _re.search(r"https?://(streamdb\d+)\.securenetsystems\.net", cfg["url"])
+    host = f"{m.group(1)}web.securenetsystems.net" if m else "streamdb9web.securenetsystems.net"
+    return f"https://{host}/player_status_update/{cfg['callsign']}.xml"
+
+
+def fetch_status(cfg: dict | None = None) -> dict | None:
+    """Read what Cirrus is currently displaying: {title, artist, album, cover, duration}. None on any error."""
+    import random
+    import xml.etree.ElementTree as ET
+    try:
+        url = status_url(cfg) + f"?randStr={random.random()}"
+        req = urllib.request.Request(url, headers={"User-Agent": "AmpliPhy-MetaBridge/0.3", "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            root = ET.fromstring(r.read())
+        get = lambda k: (root.findtext(k) or "").strip()
+        return {"title": get("title"), "artist": get("artist"), "album": get("album"),
+                "cover": get("cover"), "duration": get("duration")}
+    except Exception:
+        return None
+
+
 def _cfg() -> dict:
     return {
         "url": os.environ.get("METABRIDGE_CIRRUS_URL", DEFAULT_URL),
