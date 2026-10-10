@@ -149,6 +149,8 @@ def load_settings() -> dict:
         "cirrus_token": os.environ.get("METABRIDGE_CIRRUS_TOKEN", ""),
         "outputs": os.environ.get("METABRIDGE_OUTPUTS", "log"),
         "tcp_port": os.environ.get("METABRIDGE_TCP_PORT", "8766"),
+        "gmr_station_id": os.environ.get("METABRIDGE_GETMERADIO_STATION_ID", ""),
+        "gmr_token": os.environ.get("METABRIDGE_GETMERADIO_TOKEN", ""),
         "autostart": True,
     }
 
@@ -166,6 +168,10 @@ def load_settings() -> dict:
                 settings["outputs"] = file_data.get("outputs", "log")
             if not os.environ.get("METABRIDGE_TCP_PORT"):
                 settings["tcp_port"] = file_data.get("tcp_port", "8766")
+            if not os.environ.get("METABRIDGE_GETMERADIO_STATION_ID"):
+                settings["gmr_station_id"] = file_data.get("gmr_station_id", "")
+            if not os.environ.get("METABRIDGE_GETMERADIO_TOKEN"):
+                settings["gmr_token"] = secrets.reveal(file_data.get("gmr_token", ""))
         except Exception as e:
             logging.getLogger("metabridge").warning(f"Could not load settings file: {e}")
 
@@ -177,12 +183,15 @@ def save_settings(settings: dict):
     try:
         on_disk = dict(settings)
         on_disk["cirrus_token"] = secrets.protect(settings.get("cirrus_token", ""))  # never plain text on disk
+        on_disk["gmr_token"] = secrets.protect(settings.get("gmr_token", ""))
         SETTINGS_FILE.write_text(json.dumps(on_disk, indent=2), encoding="utf-8")
         # Also update environment variables
         os.environ["METABRIDGE_CIRRUS_CALLSIGN"] = settings.get("cirrus_callsign", "")
         os.environ["METABRIDGE_CIRRUS_TOKEN"] = settings.get("cirrus_token", "")
         os.environ["METABRIDGE_OUTPUTS"] = settings.get("outputs", "log")
         os.environ["METABRIDGE_TCP_PORT"] = settings.get("tcp_port", "8766")
+        os.environ["METABRIDGE_GETMERADIO_STATION_ID"] = settings.get("gmr_station_id", "")
+        os.environ["METABRIDGE_GETMERADIO_TOKEN"] = settings.get("gmr_token", "")
     except Exception as e:
         logging.getLogger("metabridge").error(f"Could not save settings: {e}")
 
@@ -195,6 +204,8 @@ def _apply_settings_to_env(settings: dict):
         ("METABRIDGE_CIRRUS_TOKEN", "cirrus_token"),
         ("METABRIDGE_OUTPUTS", "outputs"),
         ("METABRIDGE_TCP_PORT", "tcp_port"),
+        ("METABRIDGE_GETMERADIO_STATION_ID", "gmr_station_id"),
+        ("METABRIDGE_GETMERADIO_TOKEN", "gmr_token"),
     ):
         if settings.get(key) and not os.environ.get(env_key):
             os.environ[env_key] = str(settings[key])
@@ -277,7 +288,8 @@ def api_get_settings():
 
 
 @app.post("/api/settings")
-def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: str = Form(""), tcp_port: str = Form(""), autostart_on: str = Form("")):
+def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: str = Form(""), tcp_port: str = Form(""), autostart_on: str = Form(""),
+                      gmr_station_id: str = Form(""), gmr_token: str = Form("")):
     """Save settings from dashboard form."""
     s = load_settings()
     want_autostart = autostart_on == "1"
@@ -291,6 +303,10 @@ def api_save_settings(callsign: str = Form(""), token: str = Form(""), outputs: 
         s["outputs"] = outputs
     if tcp_port:
         s["tcp_port"] = tcp_port
+    if gmr_station_id:
+        s["gmr_station_id"] = gmr_station_id.strip()
+    if gmr_token and gmr_token != "***":
+        s["gmr_token"] = gmr_token.strip()
 
     save_settings(s)
     tcp_listener.start_if_configured()  # bring the listener up if it wasn't already
@@ -634,6 +650,18 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
             </div>
         </div>
 
+        <h2 style="margin-top:28px">📻 Get Me Radio! directory <span class="badge {'ok' if (settings.get('gmr_station_id') and settings.get('gmr_token')) else 'warn'}">{'sending now playing' if (settings.get('gmr_station_id') and settings.get('gmr_token')) else 'not set up'}</span></h2>
+        <div class="settings-grid">
+            <div class="form-group">
+                <label>Station ID<span class="note">From Get Me Radio → Edit Station → Stream Information</span></label>
+                <input type="text" id="gmr_station_id" value="{e(settings.get('gmr_station_id', ''))}" placeholder="e.g. 12442">
+            </div>
+            <div class="form-group">
+                <label>API Token<span class="note">Same page. Set Metadata Source to "API" there first · stored encrypted</span></label>
+                <input type="password" id="gmr_token" placeholder="{'Token saved - leave blank to keep it' if settings.get('gmr_token') else 'Paste your Get Me Radio token'}">
+            </div>
+        </div>
+
         <button class="success" onclick="saveSettings()">💾 Save Settings</button>
         <span id="save-status" style="margin-left:12px;font-size:12px;color:var(--muted-2)"></span>
 
@@ -655,13 +683,15 @@ def dashboard(artist: str = "", title: str = "", album: str = "", tab: str = "mo
         const outputs = document.getElementById('outputs').value;
         const tcp_port = document.getElementById('tcp_port').value;
         const autostart_on = document.getElementById('autostart_on').checked ? '1' : '0';
+        const gmr_station_id = document.getElementById('gmr_station_id').value;
+        const gmr_token = document.getElementById('gmr_token').value;
         const status = document.getElementById('save-status');
 
         try {{
             const resp = await fetch('/api/settings', {{
                 method: 'POST',
                 headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-                body: `callsign=${{encodeURIComponent(callsign)}}&token=${{encodeURIComponent(token)}}&outputs=${{encodeURIComponent(outputs)}}&tcp_port=${{encodeURIComponent(tcp_port)}}&autostart_on=${{autostart_on}}`
+                body: `callsign=${{encodeURIComponent(callsign)}}&token=${{encodeURIComponent(token)}}&outputs=${{encodeURIComponent(outputs)}}&tcp_port=${{encodeURIComponent(tcp_port)}}&autostart_on=${{autostart_on}}&gmr_station_id=${{encodeURIComponent(gmr_station_id)}}&gmr_token=${{encodeURIComponent(gmr_token)}}`
             }});
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.json();
