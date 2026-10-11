@@ -54,28 +54,19 @@ def send(enriched: EnrichedTrackEvent) -> OutputResult:
             time.sleep(MIN_INTERVAL - since)   # respect their 20-second guidance
         _last["ts"], _last["key"] = time.time(), key
     params = {"token": token, "station_id": station, "artist": ev.artist or "", "title": ev.title or ""}
-    data = urllib.parse.urlencode(params).encode()
-    headers = {"User-Agent": "AmpliPhy-MetaBridge/0.4", "Content-Type": "application/x-www-form-urlencoded"}
+    # Get Me Radio reads the fields from the query string only - a form-encoded
+    # POST body is ignored ("ERROR: Artist and Title fields are empty").
+    query = urllib.parse.urlencode(params)
+    headers = {"User-Agent": "AmpliPhy-MetaBridge/0.4"}
     t0 = time.time()
     try:
-        req = urllib.request.Request(URL, data=data, headers=headers, method="POST")
+        req = urllib.request.Request(URL + "?" + query, headers=headers, method="GET")
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            body = r.read(400).decode("utf-8", "replace").strip()
+            body = r.read(600).decode("utf-8", "replace").strip()
             ok = 200 <= r.status < 300 and "error" not in body.lower()
-            res = OutputResult(NAME, ok, now(), f"HTTP {r.status} · {body[:120]}", safe)
+            res = OutputResult(NAME, ok, now(), f"HTTP {r.status} · {' '.join(body.split())[:120]}", safe)
     except urllib.error.HTTPError as e:
-        if e.code in (404, 405):
-            # Some deployments only take query-string GETs; try once that way.
-            try:
-                req = urllib.request.Request(URL + "?" + data.decode(), headers={"User-Agent": headers["User-Agent"]})
-                with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-                    body = r.read(400).decode("utf-8", "replace").strip()
-                    res = OutputResult(NAME, 200 <= r.status < 300 and "error" not in body.lower(), now(),
-                                       f"HTTP {r.status} (GET) · {body[:120]}", safe)
-            except Exception as e2:
-                res = OutputResult(NAME, False, now(), f"error: {e2}", safe)
-        else:
-            res = OutputResult(NAME, False, now(), f"HTTP {e.code}", safe)
+        res = OutputResult(NAME, False, now(), f"HTTP {e.code}", safe)
     except Exception as e:  # network errors must never take the pipeline down
         res = OutputResult(NAME, False, now(), f"error: {e}", safe)
     res.roundtrip_ms = int((time.time() - t0) * 1000)
